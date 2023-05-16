@@ -16,12 +16,13 @@ class FaissGenerator:
         self.dataset_name = dataset_name
 
         self.X = None
+        self.y = None
         self.distances = None
         self.indexes = None
 
-    def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         with Timer('Downloading dataset...'):
-            self.X, _ = fetch_openml(self.dataset_name, cache=True, return_X_y=True, as_frame=False)
+            self.X, self.y = fetch_openml(self.dataset_name, cache=True, return_X_y=True, as_frame=False, parser='liac-arff')
             n, m = self.X.shape
 
         if self.cosine_metric:
@@ -51,14 +52,14 @@ class FaissGenerator:
         norm = np.linalg.norm(self.X)
         self.distances /= norm
 
-        return self.X, self.distances, self.indexes
+        return self.X, self.y, self.distances, self.indexes
 
     def save(self, path: str) -> None:
         with lz4.frame.open(path, 'wb') as f:
-            pickle.dump((self.X, self.distances, self.indexes), f)
+            pickle.dump((self.X, self.y, self.distances, self.indexes), f)
 
     @staticmethod
-    def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         with lz4.frame.open(path, 'rb') as f:
             return pickle.load(f)
 
