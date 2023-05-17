@@ -1,5 +1,5 @@
 import time
-
+from visutils import *
 
 class Timer:
     def __init__(self, name: str) -> None:
