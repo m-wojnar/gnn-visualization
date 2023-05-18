@@ -74,6 +74,15 @@ def generate_visualization(model: nn.Module, graph: Data, path) -> None:
     plt.show()
 
 
+def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, nn_val: int) -> Data:
+    row = torch.arange(X.shape[0]).view(-1, 1).repeat(1, nn_val).view(-1)
+    col = indexes.contiguous().view(-1)
+    edge_index = torch.stack([row, col], dim=0)
+    edge_attr = distances.contiguous().view(-1, 1)
+
+    return Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
+
+
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--data', type=str, default='../data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
@@ -88,16 +97,9 @@ if __name__ == '__main__':
 
     X, y, distances, indexes, nn_val = FaissGenerator.load(args.data)
     X, y, distances, indexes = tuple(map(lambda x: torch.from_numpy(x).to(device), (X, y, distances[:, 1:], indexes[:, 1:])))
-    num_nodes, input_dim = X.shape
+    graph = create_graph(X, y, distances, indexes, nn_val)
 
-    row = torch.arange(num_nodes).view(-1, 1).repeat(1, nn_val).view(-1)
-    col = indexes.contiguous().view(-1)
-    edge_index = torch.stack([row, col], dim=0)
-    edge_attr = distances.contiguous().view(-1, 1)
-
-    graph = Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
-
-    model = VisGNN(input_dim=input_dim, hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
+    model = VisGNN(input_dim=X.shape[1], hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
     model = train(model, graph, args.epochs, args.lr)
     model.eval()
 
