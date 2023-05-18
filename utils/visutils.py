@@ -73,7 +73,7 @@ class EmbeddingsScatterAnimation:
 
 
     def animfunc(self, i):
-        C = self.C[i] if self.C is not None else None
+        C = self.C if self.C is not None else None
         self.ax.clear()
         if self.xlim is not None:
             self.ax.set_xlim(*self.xlim)

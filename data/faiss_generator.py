@@ -37,6 +37,8 @@ class FaissGenerator:
             quantizer = faiss.IndexFlatL2(m)
             index_flat = faiss.IndexIVFFlat(quantizer, m, int(np.sqrt(n)))
 
+
+        # res = faiss.StandardGpuResources()  # use a single GPU
         # gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index_flat)
         assert not index_flat.is_trained
         index_flat.train(self.X)
