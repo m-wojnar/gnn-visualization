@@ -14,7 +14,7 @@ python3 -m venv venv
 pip install -r requirements.txt
 ```
 
-**Note:** you may need to install `faiss` package manually.
+**Note:** you have to install `faiss` package manually.
 
 ## Usage
 
@@ -29,7 +29,7 @@ compute the nearest neighbors.
 from gnn_visualization import FaissGenerator
 
 generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True)
-X, y, distances, indexes = generator.run()
+X, y, distances, indexes, nn = generator.run()
 ```
 
 You can save the results with pickle and lz4 compression:
@@ -41,5 +41,5 @@ generator.save('mnist_784_nn100_cosine.pkl.lz4')
 and load them later:
 
 ```python
-X, y, distances, indexes = FaissGenerator.load('mnist_784_nn100_cosine.pkl.lz4')
+X, y, distances, indexes, nn = FaissGenerator.load('mnist_784_nn100_cosine.pkl.lz4')
 ```

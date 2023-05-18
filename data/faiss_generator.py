@@ -5,25 +5,34 @@ import faiss
 import lz4.frame
 import numpy as np
 from sklearn.datasets import fetch_openml
+from sklearn.preprocessing import LabelEncoder
 
 from utils import Timer
 
 
 class FaissGenerator:
-    def __init__(self, dataset_name: str, nn: int, cosine_metric: bool = False) -> None:
+    def __init__(self, dataset_name: str, nn: int, cosine_metric: bool = False, limit_examples: int = None) -> None:
         self.nn = nn
         self.cosine_metric = cosine_metric
         self.dataset_name = dataset_name
+        self.limit_examples = limit_examples
 
         self.X = None
         self.y = None
         self.distances = None
         self.indexes = None
 
-    def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
         with Timer('Downloading dataset...'):
-            self.X, self.y = fetch_openml(self.dataset_name, cache=True, return_X_y=True, as_frame=False, parser='liac-arff')
-            n, m = self.X.shape
+            self.X, self.y = fetch_openml(self.dataset_name, cache=True, return_X_y=True, as_frame=False, parser='auto')
+
+        if self.limit_examples is not None:
+            idxs = np.random.choice(self.X.shape[0], self.limit_examples)
+            self.X, self.y = self.X[idxs], self.y[idxs]
+
+        self.X = self.X.astype(np.float32)
+        self.y = LabelEncoder().fit_transform(self.y)
+        n, m = self.X.shape
 
         if self.cosine_metric:
             norm = np.linalg.norm(self.X, axis=1).reshape(-1, 1)
@@ -52,23 +61,23 @@ class FaissGenerator:
         norm = np.linalg.norm(self.X)
         self.distances /= norm
 
-        return self.X, self.y, self.distances, self.indexes
+        return self.X, self.y, self.distances, self.indexes, self.nn
 
     def save(self, path: str) -> None:
         with lz4.frame.open(path, 'wb') as f:
-            pickle.dump((self.X, self.y, self.distances, self.indexes), f)
+            pickle.dump((self.X, self.y, self.distances, self.indexes, self.nn), f)
 
     @staticmethod
-    def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
         with lz4.frame.open(path, 'rb') as f:
             return pickle.load(f)
 
 
 if __name__ == '__main__':
-    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True)
+    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True, limit_examples=10000)
     generator.run()
-    generator.save('mnist/mnist_784_nn100_cosine.pkl.lz4')
+    generator.save('mnist/small_mnist_784_nn100_cosine.pkl.lz4')
 
-    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=False)
+    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=False, limit_examples=10000)
     generator.run()
-    generator.save('mnist/mnist_784_nn100_euclidean.pkl.lz4')
+    generator.save('mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
