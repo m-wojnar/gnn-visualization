@@ -1,12 +1,30 @@
 from argparse import ArgumentParser
 
+import matplotlib.pyplot as plt
 import torch
+import pandas as pd
+import numpy as np
 from sklearn.manifold import MDS
 
 from data.faiss_generator import FaissGenerator
 from models.train import create_graph, VisGNN
 from utils.local_score import LocalMetric
-from utils import ROOT_PATH
+from utils import ROOT_PATH, Timer
+
+
+def scatter_mds(xs, ys, path):
+    embedding = pd.DataFrame(xs, columns=["1st Dimension", "2nd Dimension"])
+    embedding["label"] = ys
+    plt.figure(figsize=(6, 6))
+
+    for y in np.unique(ys):
+        df = embedding[embedding["label"] == y]
+        plt.scatter(df["1st Dimension"], df["2nd Dimension"], label=y, marker=".")
+    
+    plt.title("MDS")
+    plt.legend()
+    plt.savefig(path, bbox_inches='tight')
+    plt.show()
 
 
 if __name__ == '__main__':
@@ -30,8 +48,11 @@ if __name__ == '__main__':
 
         metrics.calculate_knn_gain_and_dr_quality(gnn_vis, X, y, f'VisGNN {i}', dataset_size=0.95)
 
-    mds = MDS(n_components=2, dissimilarity='euclidean')
-    mds_vis = mds.fit_transform(X)
+    with Timer('Calculating MDS projection...'):
+        mds = MDS(n_components=2, dissimilarity='euclidean')
+        mds_vis = mds.fit_transform(X)
+    scatter_mds(mds_vis, y, f'{ROOT_PATH}/models/checkpoints/vis_mds.pdf')
+    
 
     metrics.calculate_knn_gain_and_dr_quality(mds_vis, X, y, 'MDS', dataset_size=0.95)
     metrics.visualize()
