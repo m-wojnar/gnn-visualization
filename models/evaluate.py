@@ -1,3 +1,5 @@
+from argparse import ArgumentParser
+
 import torch
 from sklearn.manifold import MDS
 
@@ -8,9 +10,13 @@ from utils import ROOT_PATH
 
 
 if __name__ == '__main__':
+    args = ArgumentParser()
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/dataset_nn100.pkl.lz4')
+    args = args.parse_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    X, y, distances, indexes, nn_val = FaissGenerator.load(f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
+    X, y, distances, indexes, nn_val = FaissGenerator.load(args.data)
     X, y, distances, indexes = tuple(map(lambda x: torch.from_numpy(x).to(device), (X, y, distances[:, 1:], indexes[:, 1:])))
     graph = create_graph(X, y, distances, indexes, nn_val)
     X, y = X.detach().cpu().numpy(), y.detach().cpu().numpy()

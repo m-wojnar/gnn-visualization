@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 import os
 import pickle
 from typing import Tuple
@@ -10,12 +11,23 @@ from sklearn.preprocessing import LabelEncoder
 
 from utils import Timer, ROOT_PATH
 
+TRAIN_DATASETS = {
+    'mnist_784':        554,    # 10 classes digits
+    'Kuzushiji-MNIST':  41982,  # 10 classes Kuzushiji (cursive Japanese)
+    'SignMNIST':        45082,  # 24 classes A-Z letters
+    'gina_prior':       1042    # 2 classes (odd and even) MNIST digits
+}
+
+TEST_DATASETS = {
+    'Fashion-MNIST':    40996,  # 10 classes Zalando clothes
+}
+
 
 class FaissGenerator:
-    def __init__(self, dataset_name: str, nn: int, cosine_metric: bool = False, limit_examples: int = None) -> None:
+    def __init__(self, dataset_id: int, nn: int, cosine_metric: bool = False, limit_examples: int = None) -> None:
         self.nn = nn
         self.cosine_metric = cosine_metric
-        self.dataset_name = dataset_name
+        self.dataset_id = dataset_id
         self.limit_examples = limit_examples
 
         self.X = None
@@ -25,7 +37,7 @@ class FaissGenerator:
 
     def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
         with Timer('Downloading dataset...'):
-            self.X, self.y = fetch_openml(self.dataset_name, cache=True, return_X_y=True, as_frame=False, parser='auto')
+            self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
 
         if self.limit_examples is not None:
             idxs = np.random.choice(self.X.shape[0], self.limit_examples)
@@ -75,10 +87,14 @@ class FaissGenerator:
 
 
 if __name__ == '__main__':
-    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True, limit_examples=10000)
+    args = ArgumentParser()
+    args.add_argument('--dataset', type=str, default='mnist_784')
+    args.add_argument('--save_path', type=str, default=f'{ROOT_PATH}/data/mnist_784/dataset_nn100.pkl.lz4')
+    args.add_argument('--cosine', default=False, action='store_true')
+    args.add_argument('--limit_examples', type=int, default=4000)
+    args.add_argument('--nn', type=int, default=100)
+    args = args.parse_args()
+    
+    generator = FaissGenerator(TRAIN_DATASETS[args.dataset], nn=args.nn, cosine_metric=args.cosine, limit_examples=args.limit_examples)
     generator.run()
-    generator.save(f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_cosine.pkl.lz4')
-
-    generator = FaissGenerator('mnist_784', nn=100, cosine_metric=False, limit_examples=10000)
-    generator.run()
-    generator.save(f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
+    generator.save(args.save_path)

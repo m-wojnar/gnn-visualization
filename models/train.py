@@ -86,7 +86,7 @@ def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, nn_va
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/dataset_nn100.pkl.lz4')
     args.add_argument('--batch_size', type=int, default=32)
     args.add_argument('--epochs', type=int, default=100)
     args.add_argument('--hidden_dim', type=int, default=64)
