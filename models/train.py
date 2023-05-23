@@ -10,6 +10,7 @@ from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, CGConv
 
 from data import FaissGenerator
+from utils import ROOT_PATH
 
 
 class VisGNN(nn.Module):
@@ -51,11 +52,11 @@ def train(model: nn.Module, graph: Data, epochs: int, lr: float) -> nn.Module:
         optimizer.step()
 
         print(f'Epoch: {epoch}, loss: {loss.item()}')
-        torch.save(model.state_dict(), f'checkpoints/vis_gnn_model_{epoch}.pt')
+        torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_{epoch}.pt')
 
         if epoch % 10 == 0:
             model.eval()
-            generate_visualization(model, graph, f'checkpoints/vis_gnn_{epoch}.pdf')
+            generate_visualization(model, graph, f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
             model.train()
 
     return model
@@ -85,7 +86,7 @@ def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, nn_va
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--data', type=str, default='../data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
     args.add_argument('--batch_size', type=int, default=32)
     args.add_argument('--epochs', type=int, default=100)
     args.add_argument('--hidden_dim', type=int, default=64)
@@ -103,5 +104,5 @@ if __name__ == '__main__':
     model = train(model, graph, args.epochs, args.lr)
     model.eval()
 
-    torch.save(model.state_dict(), 'checkpoints/vis_gnn_model_final.pt')
-    generate_visualization(model, graph, 'checkpoints/vis_gnn_final.pdf')
+    torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
+    generate_visualization(model, graph, f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')

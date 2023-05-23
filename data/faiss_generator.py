@@ -1,3 +1,4 @@
+import os
 import pickle
 from typing import Tuple
 
@@ -7,7 +8,7 @@ import numpy as np
 from sklearn.datasets import fetch_openml
 from sklearn.preprocessing import LabelEncoder
 
-from utils import Timer
+from utils import Timer, ROOT_PATH
 
 
 class FaissGenerator:
@@ -76,8 +77,8 @@ class FaissGenerator:
 if __name__ == '__main__':
     generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True, limit_examples=10000)
     generator.run()
-    generator.save('mnist/small_mnist_784_nn100_cosine.pkl.lz4')
+    generator.save(f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_cosine.pkl.lz4')
 
     generator = FaissGenerator('mnist_784', nn=100, cosine_metric=False, limit_examples=10000)
     generator.run()
-    generator.save('mnist/small_mnist_784_nn100_euclidean.pkl.lz4')
+    generator.save(f'{ROOT_PATH}/data/mnist/small_mnist_784_nn100_euclidean.pkl.lz4')

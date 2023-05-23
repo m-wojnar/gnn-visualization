@@ -1,4 +1,8 @@
+import os
 import time
+
+
+ROOT_PATH = os.sep.join(__file__.split(os.sep)[:-2])
 
 
 class Timer:
