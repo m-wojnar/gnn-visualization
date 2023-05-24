@@ -11,6 +11,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from utils import Timer, ROOT_PATH
 
+
 TRAIN_DATASETS = {
     'mnist_784':        554,    # 10 classes digits
     'Kuzushiji-MNIST':  41982,  # 10 classes Kuzushiji (cursive Japanese)
@@ -24,11 +25,36 @@ TEST_DATASETS = {
 
 
 class FaissGenerator:
-    def __init__(self, dataset_id: int, nn: int, cosine_metric: bool = False, limit_examples: int = None) -> None:
-        self.nn = nn
-        self.cosine_metric = cosine_metric
+    """
+    Generates a nearest neighbor graph using the Faiss library. The graph can be saved in a pickle file.
+
+    Parameters
+    ----------
+    dataset_id : int
+        Dataset id from OpenML.
+    nn : int
+        Number of nearest neighbors.
+    rn : int
+        Number of random neighbors.
+    metric : str
+        Metric used to compute distances. Can be 'binary', 'cosine' or 'euclidean'.
+    examples : int
+        Number of examples to use from the dataset. If None, all examples are used.
+    """
+
+    def __init__(
+            self,
+            dataset_id: int,
+            nn: int,
+            rn: int,
+            metric: str = 'binary',
+            examples: int = None
+    ) -> None:
         self.dataset_id = dataset_id
-        self.limit_examples = limit_examples
+        self.nn = nn
+        self.rn = rn
+        self.metric = metric
+        self.examples = examples
 
         self.X = None
         self.y = None
@@ -39,46 +65,60 @@ class FaissGenerator:
         with Timer('Downloading dataset...'):
             self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
 
-        if self.limit_examples is not None:
-            idxs = np.random.choice(self.X.shape[0], self.limit_examples)
+        if self.examples is not None:
+            idxs = np.random.choice(self.X.shape[0], self.examples)
             self.X, self.y = self.X[idxs], self.y[idxs]
 
         self.X = self.X.astype(np.float32)
         self.y = LabelEncoder().fit_transform(self.y)
         n, m = self.X.shape
 
-        if self.cosine_metric:
+        if self.metric == 'cosine':
             norm = np.linalg.norm(self.X, axis=1).reshape(-1, 1)
             self.X /= norm
             
-        if self.cosine_metric:
-            quantizer = faiss.IndexFlatIP(m)
-            index_flat = faiss.IndexIVFFlat(quantizer, m, int(np.sqrt(n)))
-            index_flat.nprobe = 10
-        else:
-            quantizer = faiss.IndexFlatL2(m)
-            index_flat = faiss.IndexIVFFlat(quantizer, m, int(np.sqrt(n)))
+        quantizer = faiss.IndexFlatIP(m) if self.metric == 'cosine' else faiss.IndexFlatL2(m)
+        index_flat = faiss.IndexIVFFlat(quantizer, m, int(np.sqrt(n)))
 
-        # gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index_flat)
-        assert not index_flat.is_trained
-        index_flat.train(self.X)
-        assert index_flat.is_trained
+        with Timer('Building index...'):
+            # gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index_flat)
+            assert not index_flat.is_trained
+            index_flat.train(self.X)
+            assert index_flat.is_trained
 
-        index_flat.add(self.X)
+            index_flat.add(self.X)
 
         with Timer('Searching...'):
             index_flat.nprobe = 10
             self.distances, self.indexes = index_flat.search(self.X, self.nn + 1)
+            self.distances, self.indexes = self.distances[:, 1:], self.indexes[:, 1:]
+
+        if self.rn > 0:
+            rn_indexes = np.random.choice(n, size=(n, self.rn))
+            self.indexes = np.concatenate([self.indexes, rn_indexes], axis=1)
+
+            if self.metric == 'euclidean':
+                rn_distances = np.sum((self.X[rn_indexes] - self.X[:, None]) ** 2, axis=2)
+            elif self.metric == 'cosine':
+                rn_distances = 1 - np.sum(self.X[rn_indexes] * self.X[:, None], axis=2)
+            else:
+                rn_distances = np.ones_like(rn_indexes)
+
+            self.distances = np.concatenate([self.distances, rn_distances], axis=1)
 
         # normalize distances
         norm = np.linalg.norm(self.X)
         self.distances /= norm
 
-        return self.X, self.y, self.distances, self.indexes, self.nn
+        if self.metric == 'binary':
+            self.distances[:, :self.nn] = 0.
+            self.distances[:, self.nn:] = 1.
+
+        return self.X, self.y, self.distances, self.indexes, self.nn + self.rn
 
     def save(self, path: str) -> None:
         with lz4.frame.open(path, 'wb') as f:
-            pickle.dump((self.X, self.y, self.distances, self.indexes, self.nn), f)
+            pickle.dump((self.X, self.y, self.distances, self.indexes, self.nn + self.rn), f)
 
     @staticmethod
     def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
@@ -89,12 +129,19 @@ class FaissGenerator:
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--dataset', type=str, default='mnist_784')
-    args.add_argument('--save_path', type=str, default=f'{ROOT_PATH}/data/mnist_784/dataset_nn100.pkl.lz4')
-    args.add_argument('--cosine', default=False, action='store_true')
-    args.add_argument('--limit_examples', type=int, default=4000)
-    args.add_argument('--nn', type=int, default=100)
+    args.add_argument('--nn', type=int, default=2)
+    args.add_argument('--rn', type=int, default=1)
+    args.add_argument('--metric', default='binary', choices=['binary', 'cosine', 'euclidean'])
+    args.add_argument('--examples', type=int, default=None)
+    args.add_argument('--save_path', type=str, default=None)
     args = args.parse_args()
+
+    if args.save_path is not None:
+        save_path = args.save_path
+    else:
+        examples = f'ex{args.examples}' if args.examples is not None else 'full'
+        save_path = os.path.join(ROOT_PATH, 'data', args.dataset, f'{args.metric}_{examples}_nn{args.nn}_rn{args.rn}.pkl.lz4')
     
-    generator = FaissGenerator(TRAIN_DATASETS[args.dataset], nn=args.nn, cosine_metric=args.cosine, limit_examples=args.limit_examples)
+    generator = FaissGenerator(TRAIN_DATASETS[args.dataset], nn=args.nn, rn=args.rn, metric=args.metric, examples=args.examples)
     generator.run()
-    generator.save(args.save_path)
+    generator.save(save_path)
