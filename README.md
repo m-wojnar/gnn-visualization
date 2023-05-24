@@ -20,26 +20,26 @@ pip install -r requirements.txt
 
 ### Faiss index creation
 
-By default, the `FaissGenerator` class uses the `openml` package to download the datasets. You can specify the dataset
+By default, the `FaissGenerator` class uses the `OpenML` platform to download the datasets. You can specify the dataset
 you want to use by passing its id to the `FaissGenerator` constructor. The `FaissGenerator` class also takes the
-`nn` parameter, which specifies the number nearest neighbors, and `cosine_metric`, which specifies the metric used to
-compute the nearest neighbors.
+`nn` and `rn` parameters, which specifies the number nearest and random neighbors. The `metric` parameter specifies 
+the metric used to compute the nearest neighbors and `examples` sets the number of examples to take from the dataset.
 
 ```python
-from gnn_visualization import FaissGenerator
+from gnn_visualization.data import FaissGenerator
 
-generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True)
-X, y, distances, indexes, nn = generator.run()
+generator = FaissGenerator(dataset_id=554, nn=2, rn=1, metric='binary')
+X, y, distances, indexes, n_neighbours = generator.run()
 ```
 
 You can save the results with pickle and lz4 compression:
 
 ```python
-generator.save('mnist_784_nn100_cosine.pkl.lz4')
+generator.save('mnist_784/binary_full_nn2_rn1.pkl.lz4')
 ```
 
 and load them later:
 
 ```python
-X, y, distances, indexes, nn = FaissGenerator.load('mnist_784_nn100_cosine.pkl.lz4')
+X, y, distances, indexes, n_neighbours = FaissGenerator.load('mnist_784/binary_full_nn2_rn1.pkl.lz4')
 ```

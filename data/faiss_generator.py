@@ -102,7 +102,7 @@ class FaissGenerator:
             elif self.metric == 'cosine':
                 rn_distances = 1 - np.sum(self.X[rn_indexes] * self.X[:, None], axis=2)
             else:
-                rn_distances = np.ones_like(rn_indexes)
+                rn_distances = np.ones_like(rn_indexes, dtype=np.float32)
 
             self.distances = np.concatenate([self.distances, rn_distances], axis=1)
 
