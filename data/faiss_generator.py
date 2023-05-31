@@ -48,7 +48,7 @@ class FaissGenerator:
     metric : str
         Metric used to compute distances. Can be 'binary', 'cosine' or 'euclidean'.
     examples : int
-        Number of nodes in one graph. If None, all nodes are used.
+        Number of nodes in one graph.
     n_graphs : int
         Number of subgraphs to generate.
     """
@@ -76,12 +76,15 @@ class FaissGenerator:
         self.graphs = []
 
     def run(self) -> None:
-        with Timer('Training...'):
+        with Timer('Training index...'):
             self.train()
 
         for i in range(1, self.n_graphs + 1):
-            with Timer(f'Searching {i}/{self.n_graphs}...'):
-                self.search()
+            with Timer(f'Searching subgraph {i}/{self.n_graphs}...'):
+                self.search(self.examples)
+
+        with Timer(f'Searching all nodes...'):
+            self.search(None)
 
     def train(self) -> None:
         self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
@@ -106,38 +109,50 @@ class FaissGenerator:
         index_flat.nprobe = 10
 
         self.index_flat = index_flat
-        self.examples = self.examples if self.examples is not None else self.X.shape[0]
 
-    def search(self) -> None:
-        idxs = np.random.choice(self.X.shape[0], size=self.examples)
-        X, y = self.X[idxs], self.y[idxs]
+    def search(self, examples: int) -> None:
+        n = self.X.shape[0]
 
-        distance, indexes = self.index_flat.search(X, self.nn + 1)
-        distance, indexes = distance[:, 1:], indexes[:, 1:]
+        if examples is not None:
+            example_idxs = np.random.choice(n, size=examples)
+            X_search = self.X[example_idxs]
+        else:
+            X_search = self.X
+
+        distance, indexes = self.index_flat.search(X_search, self.nn + 1)
 
         if self.rn > 0:
-            rn_indexes = np.random.choice(self.examples, size=(self.examples, self.rn))
+            rn_size = examples if examples is not None else n
+            rn_indexes = np.random.choice(n, size=(rn_size, self.rn))
             indexes = np.concatenate([indexes, rn_indexes], axis=1)
 
             if self.metric == 'euclidean':
-                rn_distances = np.sum((X[rn_indexes] - X[:, None]) ** 2, axis=2)
+                rn_distances = np.sum((self.X[rn_indexes] - self.X[:, None]) ** 2, axis=2)
             elif self.metric == 'cosine':
-                rn_distances = 1 - np.sum(X[rn_indexes] * X[:, None], axis=2)
+                rn_distances = 1 - np.sum(self.X[rn_indexes] * self.X[:, None], axis=2)
             else:
                 rn_distances = np.empty_like(rn_indexes, dtype=np.float32)
 
             distance = np.concatenate([distance, rn_distances], axis=1)
 
         # normalize distances
-        norm = np.linalg.norm(X)
+        norm = np.linalg.norm(self.X)
         distance /= norm
 
         if self.metric == 'binary':
-            distance[:, :self.nn] = 0.
-            distance[:, self.nn:] = 1.
+            distance[:, :self.nn + 1] = 0.
+            distance[:, self.nn + 1:] = 1.
 
-        # TODO save only values of the subgraph
-        self.graphs.append((self.X, self.y, distance, indexes, self.nn + self.rn))
+        if examples is not None:
+            idxs_all = np.unique(indexes)
+            idxs_dict = {idx: i for i, idx in enumerate(idxs_all)}
+
+            X, y = self.X[idxs_all], self.y[idxs_all]
+            indexes = np.vectorize(idxs_dict.get)(indexes)
+        else:
+            X, y = self.X, self.y
+
+        self.graphs.append((X, y, distance[:, 1:], indexes[:, 1:], self.nn + self.rn))
 
     def save(self, path: str) -> None:
         with lz4.frame.open(path, 'wb') as f:
@@ -154,16 +169,16 @@ class FaissGenerator:
         return list(map(to_torch, FaissGenerator.load(path)))
 
     @staticmethod
-    def load_dataset(path: str, dev: device, batch_size: int = 8, shuffle: bool = True) -> DataLoader:
-        return DataLoader(
-            list(map(lambda x: FaissGenerator.create_graph(*x), FaissGenerator.load_torch(path, dev))),
-            batch_size=batch_size,
-            shuffle=shuffle
-        )
+    def load_dataset(path: str, dev: device, batch_size: int = 8, shuffle: bool = True) -> Tuple[Data, DataLoader]:
+        graphs = FaissGenerator.load_torch(path, dev)
+        graphs = list(map(lambda x: FaissGenerator.create_graph(*x), graphs))
+        subgraphs, graph = graphs[:-1], graphs[-1]
+
+        return graph, DataLoader(subgraphs, batch_size=batch_size, shuffle=shuffle)
 
     @staticmethod
     def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int) -> Data:
-        row = torch.arange(X.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1)
+        row = torch.arange(indexes.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1)
         col = indexes.contiguous().view(-1)
         edge_index = torch.stack([row, col], dim=0)
         edge_attr = distances.contiguous().view(-1, 1)

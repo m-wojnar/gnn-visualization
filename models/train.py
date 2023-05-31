@@ -50,7 +50,15 @@ def ivhd_loss(out: Tensor, graph: Data, c: float) -> float:
     return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).sum()
 
 
-def train(model: nn.Module, dataset: DataLoader, epochs: int, lr: float, loss: Callable, loss_params: Dict) -> nn.Module:
+def train(
+        model: nn.Module,
+        graph: Data,
+        dataset: DataLoader,
+        epochs: int,
+        lr: float,
+        loss: Callable,
+        loss_params: Dict
+) -> nn.Module:
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = partial(loss, **loss_params)
 
@@ -74,8 +82,7 @@ def train(model: nn.Module, dataset: DataLoader, epochs: int, lr: float, loss: C
 
         if epoch % 10 == 0:
             model.eval()
-            # TODO plot whole graph
-            generate_plot(model, dataset.dataset[0], 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
+            generate_plot(model, graph, f'VisGNN {epoch}', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
             model.train()
 
     return model
@@ -98,13 +105,11 @@ if __name__ == '__main__':
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dataset = FaissGenerator.load_dataset(args.data, device, args.batch_size)
-    input_dim = dataset.dataset[0].x.shape[1]
+    graph, dataset = FaissGenerator.load_dataset(args.data, device, args.batch_size)
 
-    model = VisGNN(input_dim, args.hidden_dim, args.num_layers).to(device)
-    model = train(model, dataset, args.epochs, args.lr, *loss[args.loss])
+    model = VisGNN(graph.x.shape[1], args.hidden_dim, args.num_layers).to(device)
+    model = train(model, graph, dataset, args.epochs, args.lr, *loss[args.loss])
     model.eval()
 
     torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
-    # TODO plot whole graph
-    generate_plot(model, dataset.dataset[0], 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')
+    generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')

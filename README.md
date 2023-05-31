@@ -43,20 +43,22 @@ generator.save('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4')
 
 and load them later to:
 
-- a list of numpy arrays
+- numpy arrays
 
     ```python
     graphs = FaissGenerator.load('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4')
+    graph, subgraphs = graphs[:-1], graphs[-1]
     ```
 
-- a list of PyTorch tensors
+- PyTorch tensors
 
     ```python
     graphs = FaissGenerator.load_torch('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4', device)
+    graph, subgraphs = graphs[:-1], graphs[-1]
     ```
   
-- a PyToch geometric dataset
+- PyToch geometric dataset
 
     ```python
-    dataset = FaissGenerator.load_dataset('mnist_784/binary_full_nn2_rn1.pkl.lz4', device, batch_size=16, shuffle=True)
+    graph, subgraphs = FaissGenerator.load_dataset('mnist_784/binary_full_nn2_rn1.pkl.lz4', device, batch_size=16, shuffle=True)
     ```
