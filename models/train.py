@@ -9,6 +9,7 @@ from torch import Tensor
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GCNConv, CGConv
+from tqdm import tqdm
 
 from data import FaissGenerator
 from utils import ROOT_PATH
@@ -47,7 +48,7 @@ def mds_loss(out: Tensor, graph: Data) -> float:
 
 def ivhd_loss(out: Tensor, graph: Data, c: float) -> float:
     d = F.pairwise_distance(out[graph.edge_index[0]], out[graph.edge_index[1]]).view(-1, 1)
-    return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).sum()
+    return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).mean()
 
 
 def train(
@@ -66,7 +67,7 @@ def train(
         loss_val = 0
         steps = 0
 
-        for graphs in dataset:
+        for graphs in tqdm(dataset, ascii=True, desc=f'Epoch {epoch}'):
             out = model(graphs.x, graphs.edge_index, graphs.edge_attr)
             loss = criterion(out, graphs)
 
@@ -77,7 +78,7 @@ def train(
             loss_val += loss.item()
             steps += 1
 
-        print(f'Epoch: {epoch}, loss: {loss_val / steps}')
+        print(f'loss = {loss_val / steps}')
         torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_{epoch}.pt')
 
         if epoch % 10 == 0:

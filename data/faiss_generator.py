@@ -12,6 +12,7 @@ from sklearn.preprocessing import LabelEncoder
 from torch import Tensor, device
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
+from tqdm import trange
 
 from utils import Timer, ROOT_PATH
 
@@ -79,9 +80,8 @@ class FaissGenerator:
         with Timer('Training index...'):
             self.train()
 
-        for i in range(1, self.n_graphs + 1):
-            with Timer(f'Searching subgraph {i}/{self.n_graphs}...'):
-                self.search(self.examples)
+        for _ in trange(1, self.n_graphs + 1):
+            self.search(self.examples)
 
         with Timer(f'Searching all nodes...'):
             self.search(None)
