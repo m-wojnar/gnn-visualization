@@ -12,14 +12,14 @@ from utils.visualization import plot
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/binary_full_nn2_rn1.pkl.lz4')
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/100g_4000ex_binary_2nn_1rn.pkl.lz4')
     args.add_argument('--dataset_size', type=float, default=0.15)
     args = args.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    graph = FaissGenerator.load_graph(args.data, device)
-    X, y, *_ = FaissGenerator.load(args.data)
+    graph, _ = FaissGenerator.load_dataset(args.data, device)
+    X, y = graph.x.detach().cpu().numpy(), graph.y.detach().cpu().numpy()
 
     metrics = LocalMetric()
 

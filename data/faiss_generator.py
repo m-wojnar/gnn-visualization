@@ -127,9 +127,9 @@ class FaissGenerator:
             indexes = np.concatenate([indexes, rn_indexes], axis=1)
 
             if self.metric == 'euclidean':
-                rn_distances = np.sum((self.X[rn_indexes] - self.X[:, None]) ** 2, axis=2)
+                rn_distances = np.sum((self.X[rn_indexes] - X_search[:, None]) ** 2, axis=2)
             elif self.metric == 'cosine':
-                rn_distances = 1 - np.sum(self.X[rn_indexes] * self.X[:, None], axis=2)
+                rn_distances = 1 - np.sum(self.X[rn_indexes] * X_search[:, None], axis=2)
             else:
                 rn_distances = np.empty_like(rn_indexes, dtype=np.float32)
 
@@ -196,7 +196,7 @@ if __name__ == '__main__':
     args.add_argument('--rn', type=int, default=1)
     args.add_argument('--metric', default='binary', choices=['binary', 'cosine', 'euclidean'])
     args.add_argument('--examples', type=int, default=4000)
-    args.add_argument('--n_graphs', type=int, default=50)
+    args.add_argument('--n_graphs', type=int, default=100)
     args.add_argument('--save_path', type=str, default=None)
     args = args.parse_args()
 

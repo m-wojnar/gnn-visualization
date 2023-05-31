@@ -90,7 +90,7 @@ def train(
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/50g_4000ex_binary_2nn_1rn.pkl.lz4')
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/100g_4000ex_binary_2nn_1rn.pkl.lz4')
     args.add_argument('--batch_size', type=int, default=8)
     args.add_argument('--epochs', type=int, default=100)
     args.add_argument('--hidden_dim', type=int, default=64)
