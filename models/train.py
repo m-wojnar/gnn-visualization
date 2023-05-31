@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from functools import reduce, partial
+from typing import Callable, Dict
 
 import matplotlib.pyplot as plt
 import torch
@@ -38,14 +39,19 @@ class VisGNN(nn.Module):
         return x
 
 
+def mds_loss(out: Tensor, graph: Data) -> float:
+    d = F.pairwise_distance(out[graph.edge_index[0]], out[graph.edge_index[1]]).view(-1, 1)
+    return F.mse_loss(d, graph.edge_attr)
+
+
 def ivhd_loss(out: Tensor, graph: Data, c: float) -> float:
     d = F.pairwise_distance(out[graph.edge_index[0]], out[graph.edge_index[1]]).view(-1, 1)
     return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).sum()
 
 
-def train(model: nn.Module, graph: Data, epochs: int, lr: float, c: float) -> nn.Module:
+def train(model: nn.Module, graph: Data, epochs: int, lr: float, loss: Callable, loss_params: Dict) -> nn.Module:
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = partial(ivhd_loss, c=c)
+    criterion = partial(loss, **loss_params)
 
     for epoch in range(1, epochs + 1):
         out = model(graph.x, graph.edge_index, graph.edge_attr)
@@ -95,8 +101,13 @@ if __name__ == '__main__':
     args.add_argument('--hidden_dim', type=int, default=64)
     args.add_argument('--num_layers', type=int, default=5)
     args.add_argument('--lr', type=float, default=0.001)
-    args.add_argument('--c', type=float, default=0.1)
+    args.add_argument('--loss', type=str, choices=['mds', 'ivhd'], default='ivhd')
     args = args.parse_args()
+
+    loss = {
+        'mds': (mds_loss, {}),
+        'ivhd': (ivhd_loss, {'c': 0.1})
+    }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -105,7 +116,7 @@ if __name__ == '__main__':
     graph = create_graph(X, y, distances, indexes, n_neighbours)
 
     model = VisGNN(input_dim=X.shape[1], hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
-    model = train(model, graph, args.epochs, args.lr, args.c)
+    model = train(model, graph, args.epochs, args.lr, *loss[args.loss])
     model.eval()
 
     torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
