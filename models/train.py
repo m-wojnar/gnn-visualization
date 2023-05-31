@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GCNConv, CGConv
 
 from data import FaissGenerator
@@ -49,24 +50,32 @@ def ivhd_loss(out: Tensor, graph: Data, c: float) -> float:
     return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).sum()
 
 
-def train(model: nn.Module, graph: Data, epochs: int, lr: float, loss: Callable, loss_params: Dict) -> nn.Module:
+def train(model: nn.Module, dataset: DataLoader, epochs: int, lr: float, loss: Callable, loss_params: Dict) -> nn.Module:
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = partial(loss, **loss_params)
 
     for epoch in range(1, epochs + 1):
-        out = model(graph.x, graph.edge_index, graph.edge_attr)
-        loss = criterion(out, graph)
+        loss_val = 0
+        steps = 0
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        for graphs in dataset:
+            out = model(graphs.x, graphs.edge_index, graphs.edge_attr)
+            loss = criterion(out, graphs)
 
-        print(f'Epoch: {epoch}, loss: {loss.item()}')
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            loss_val += loss.item()
+            steps += 1
+
+        print(f'Epoch: {epoch}, loss: {loss_val / steps}')
         torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_{epoch}.pt')
 
         if epoch % 10 == 0:
             model.eval()
-            generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
+            # TODO plot whole graph
+            generate_plot(model, dataset.dataset[0], 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
             model.train()
 
     return model
@@ -74,7 +83,8 @@ def train(model: nn.Module, graph: Data, epochs: int, lr: float, loss: Callable,
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/binary_full_nn2_rn1.pkl.lz4')
+    args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/50g_4000ex_binary_2nn_1rn.pkl.lz4')
+    args.add_argument('--batch_size', type=int, default=8)
     args.add_argument('--epochs', type=int, default=100)
     args.add_argument('--hidden_dim', type=int, default=64)
     args.add_argument('--num_layers', type=int, default=5)
@@ -88,11 +98,13 @@ if __name__ == '__main__':
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    graph = FaissGenerator.load_graph(args.data, device)
+    dataset = FaissGenerator.load_dataset(args.data, device, args.batch_size)
+    input_dim = dataset.dataset[0].x.shape[1]
 
-    model = VisGNN(input_dim=graph.x.shape[1], hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
-    model = train(model, graph, args.epochs, args.lr, *loss[args.loss])
+    model = VisGNN(input_dim, args.hidden_dim, args.num_layers).to(device)
+    model = train(model, dataset, args.epochs, args.lr, *loss[args.loss])
     model.eval()
 
     torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
-    generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')
+    # TODO plot whole graph
+    generate_plot(model, dataset.dataset[0], 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')

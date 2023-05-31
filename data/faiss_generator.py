@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 import os
 import pickle
-from typing import Tuple
+from typing import List, Tuple
 
 import faiss
 import lz4.frame
@@ -11,6 +11,7 @@ from sklearn.datasets import fetch_openml
 from sklearn.preprocessing import LabelEncoder
 from torch import Tensor, device
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
 from utils import Timer, ROOT_PATH
 
@@ -25,6 +26,11 @@ TRAIN_DATASETS = {
 TEST_DATASETS = {
     'Fashion-MNIST':    40996,  # 10 classes Zalando clothes
 }
+
+ALL_DATASETS = {**TRAIN_DATASETS, **TEST_DATASETS}
+
+Graph = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]
+TorchGraph = Tuple[Tensor, Tensor, Tensor, Tensor, int]
 
 
 class FaissGenerator:
@@ -42,7 +48,9 @@ class FaissGenerator:
     metric : str
         Metric used to compute distances. Can be 'binary', 'cosine' or 'euclidean'.
     examples : int
-        Number of examples to use from the dataset. If None, all examples are used.
+        Number of nodes in one graph. If None, all nodes are used.
+    n_graphs : int
+        Number of subgraphs to generate.
     """
 
     def __init__(
@@ -51,26 +59,32 @@ class FaissGenerator:
             nn: int,
             rn: int,
             metric: str = 'binary',
-            examples: int = None
+            examples: int = 4000,
+            n_graphs: int = 50
     ) -> None:
         self.dataset_id = dataset_id
         self.nn = nn
         self.rn = rn
         self.metric = metric
         self.examples = examples
+        self.n_graphs = n_graphs
 
         self.X = None
         self.y = None
-        self.distances = None
-        self.indexes = None
+        self.index_flat = None
 
-    def run(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-        with Timer('Downloading dataset...'):
-            self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
+        self.graphs = []
 
-        if self.examples is not None:
-            idxs = np.random.choice(self.X.shape[0], self.examples)
-            self.X, self.y = self.X[idxs], self.y[idxs]
+    def run(self) -> None:
+        with Timer('Training...'):
+            self.train()
+
+        for i in range(1, self.n_graphs + 1):
+            with Timer(f'Searching {i}/{self.n_graphs}...'):
+                self.search()
+
+    def train(self) -> None:
+        self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
 
         self.X = self.X.astype(np.float32)
         self.y = LabelEncoder().fit_transform(self.y)
@@ -83,59 +97,69 @@ class FaissGenerator:
         quantizer = faiss.IndexFlatIP(m) if self.metric == 'cosine' else faiss.IndexFlatL2(m)
         index_flat = faiss.IndexIVFFlat(quantizer, m, int(np.sqrt(n)))
 
-        with Timer('Building index...'):
-            # gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index_flat)
-            assert not index_flat.is_trained
-            index_flat.train(self.X)
-            assert index_flat.is_trained
+        # gpu_index_flat = faiss.index_cpu_to_gpu(res, 0, index_flat)
+        assert not index_flat.is_trained
+        index_flat.train(self.X)
+        assert index_flat.is_trained
 
-            index_flat.add(self.X)
+        index_flat.add(self.X)
+        index_flat.nprobe = 10
 
-        with Timer('Searching...'):
-            index_flat.nprobe = 10
-            self.distances, self.indexes = index_flat.search(self.X, self.nn + 1)
-            self.distances, self.indexes = self.distances[:, 1:], self.indexes[:, 1:]
+        self.index_flat = index_flat
+        self.examples = self.examples if self.examples is not None else self.X.shape[0]
+
+    def search(self) -> None:
+        idxs = np.random.choice(self.X.shape[0], size=self.examples)
+        X, y = self.X[idxs], self.y[idxs]
+
+        distance, indexes = self.index_flat.search(X, self.nn + 1)
+        distance, indexes = distance[:, 1:], indexes[:, 1:]
 
         if self.rn > 0:
-            rn_indexes = np.random.choice(n, size=(n, self.rn))
-            self.indexes = np.concatenate([self.indexes, rn_indexes], axis=1)
+            rn_indexes = np.random.choice(self.examples, size=(self.examples, self.rn))
+            indexes = np.concatenate([indexes, rn_indexes], axis=1)
 
             if self.metric == 'euclidean':
-                rn_distances = np.sum((self.X[rn_indexes] - self.X[:, None]) ** 2, axis=2)
+                rn_distances = np.sum((X[rn_indexes] - X[:, None]) ** 2, axis=2)
             elif self.metric == 'cosine':
-                rn_distances = 1 - np.sum(self.X[rn_indexes] * self.X[:, None], axis=2)
+                rn_distances = 1 - np.sum(X[rn_indexes] * X[:, None], axis=2)
             else:
-                rn_distances = np.ones_like(rn_indexes, dtype=np.float32)
+                rn_distances = np.empty_like(rn_indexes, dtype=np.float32)
 
-            self.distances = np.concatenate([self.distances, rn_distances], axis=1)
+            distance = np.concatenate([distance, rn_distances], axis=1)
 
         # normalize distances
-        norm = np.linalg.norm(self.X)
-        self.distances /= norm
+        norm = np.linalg.norm(X)
+        distance /= norm
 
         if self.metric == 'binary':
-            self.distances[:, :self.nn] = 0.
-            self.distances[:, self.nn:] = 1.
+            distance[:, :self.nn] = 0.
+            distance[:, self.nn:] = 1.
 
-        return self.X, self.y, self.distances, self.indexes, self.nn + self.rn
+        # TODO save only values of the subgraph
+        self.graphs.append((self.X, self.y, distance, indexes, self.nn + self.rn))
 
     def save(self, path: str) -> None:
         with lz4.frame.open(path, 'wb') as f:
-            pickle.dump((self.X, self.y, self.distances, self.indexes, self.nn + self.rn), f)
+            pickle.dump(self.graphs, f)
 
     @staticmethod
-    def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    def load(path: str) -> List[Graph]:
         with lz4.frame.open(path, 'rb') as f:
             return pickle.load(f)
 
     @staticmethod
-    def load_torch(path: str, dev: device) -> Tuple[Tensor, Tensor, Tensor, Tensor, int]:
-        values = FaissGenerator.load(path)
-        return tuple(map(lambda x: torch.from_numpy(x).to(dev), values[:-1])) + (values[-1],)
+    def load_torch(path: str, dev: device) -> List[TorchGraph]:
+        to_torch = lambda values: tuple(map(lambda x: torch.from_numpy(x).to(dev), values[:-1])) + (values[-1],)
+        return list(map(to_torch, FaissGenerator.load(path)))
 
     @staticmethod
-    def load_graph(path: str, dev: device) -> Data:
-        return FaissGenerator.create_graph(*FaissGenerator.load_torch(path, dev))
+    def load_dataset(path: str, dev: device, batch_size: int = 8, shuffle: bool = True) -> DataLoader:
+        return DataLoader(
+            list(map(lambda x: FaissGenerator.create_graph(*x), FaissGenerator.load_torch(path, dev))),
+            batch_size=batch_size,
+            shuffle=shuffle
+        )
 
     @staticmethod
     def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int) -> Data:
@@ -143,6 +167,9 @@ class FaissGenerator:
         col = indexes.contiguous().view(-1)
         edge_index = torch.stack([row, col], dim=0)
         edge_attr = distances.contiguous().view(-1, 1)
+
+        perm = torch.randperm(edge_index.shape[1])
+        edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
 
         return Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
 
@@ -153,16 +180,21 @@ if __name__ == '__main__':
     args.add_argument('--nn', type=int, default=2)
     args.add_argument('--rn', type=int, default=1)
     args.add_argument('--metric', default='binary', choices=['binary', 'cosine', 'euclidean'])
-    args.add_argument('--examples', type=int, default=None)
+    args.add_argument('--examples', type=int, default=4000)
+    args.add_argument('--n_graphs', type=int, default=50)
     args.add_argument('--save_path', type=str, default=None)
     args = args.parse_args()
 
     if args.save_path is not None:
         save_path = args.save_path
     else:
-        examples = f'ex{args.examples}' if args.examples is not None else 'full'
-        save_path = os.path.join(ROOT_PATH, 'data', args.dataset, f'{args.metric}_{examples}_nn{args.nn}_rn{args.rn}.pkl.lz4')
+        examples = f'{args.examples}ex' if args.examples is not None else 'full'
+        filename = f'{args.n_graphs}g_{examples}_{args.metric}_{args.nn}nn_{args.rn}rn.pkl.lz4'
+        save_path = os.path.join(ROOT_PATH, 'data', args.dataset, filename)
     
-    generator = FaissGenerator(TRAIN_DATASETS[args.dataset], nn=args.nn, rn=args.rn, metric=args.metric, examples=args.examples)
+    generator = FaissGenerator(
+        ALL_DATASETS[args.dataset], nn=args.nn, rn=args.rn, metric=args.metric,
+        examples=args.examples, n_graphs=args.n_graphs
+    )
     generator.run()
     generator.save(save_path)
