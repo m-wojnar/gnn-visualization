@@ -6,8 +6,11 @@ from typing import Tuple
 import faiss
 import lz4.frame
 import numpy as np
+import torch
 from sklearn.datasets import fetch_openml
 from sklearn.preprocessing import LabelEncoder
+from torch import Tensor, device
+from torch_geometric.data import Data
 
 from utils import Timer, ROOT_PATH
 
@@ -124,6 +127,24 @@ class FaissGenerator:
     def load(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
         with lz4.frame.open(path, 'rb') as f:
             return pickle.load(f)
+
+    @staticmethod
+    def load_torch(path: str, dev: device) -> Tuple[Tensor, Tensor, Tensor, Tensor, int]:
+        values = FaissGenerator.load(path)
+        return tuple(map(lambda x: torch.from_numpy(x).to(dev), values[:-1])) + (values[-1],)
+
+    @staticmethod
+    def load_graph(path: str, dev: device) -> Data:
+        return FaissGenerator.create_graph(*FaissGenerator.load_torch(path, dev))
+
+    @staticmethod
+    def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int) -> Data:
+        row = torch.arange(X.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1)
+        col = indexes.contiguous().view(-1)
+        edge_index = torch.stack([row, col], dim=0)
+        edge_attr = distances.contiguous().view(-1, 1)
+
+        return Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
 
 
 if __name__ == '__main__':

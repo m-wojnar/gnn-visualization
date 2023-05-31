@@ -2,7 +2,6 @@ from argparse import ArgumentParser
 from functools import reduce, partial
 from typing import Callable, Dict
 
-import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,6 +11,7 @@ from torch_geometric.nn import GCNConv, CGConv
 
 from data import FaissGenerator
 from utils import ROOT_PATH
+from utils.visualization import generate_plot
 
 
 class VisGNN(nn.Module):
@@ -66,32 +66,10 @@ def train(model: nn.Module, graph: Data, epochs: int, lr: float, loss: Callable,
 
         if epoch % 10 == 0:
             model.eval()
-            generate_visualization(model, graph, f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
+            generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
             model.train()
 
     return model
-
-
-def generate_visualization(model: nn.Module, graph: Data, path) -> None:
-    out = model(graph.x, graph.edge_index, graph.edge_attr).detach().cpu().numpy()
-    plt.figure(figsize=(6, 6))
-
-    for y in graph.y.unique():
-        plt.scatter(out[graph.y == y, 0], out[graph.y == y, 1], s=5, label=y.item())
-
-    plt.title('VisGNN')
-    plt.legend()
-    plt.savefig(path, bbox_inches='tight')
-    plt.show()
-
-
-def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int) -> Data:
-    row = torch.arange(X.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1)
-    col = indexes.contiguous().view(-1)
-    edge_index = torch.stack([row, col], dim=0)
-    edge_attr = distances.contiguous().view(-1, 1)
-
-    return Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
 
 
 if __name__ == '__main__':
@@ -110,14 +88,11 @@ if __name__ == '__main__':
     }
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    graph = FaissGenerator.load_graph(args.data, device)
 
-    X, y, distances, indexes, n_neighbours = FaissGenerator.load(args.data)
-    X, y, distances, indexes = tuple(map(lambda x: torch.from_numpy(x).to(device), (X, y, distances, indexes)))
-    graph = create_graph(X, y, distances, indexes, n_neighbours)
-
-    model = VisGNN(input_dim=X.shape[1], hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
+    model = VisGNN(input_dim=graph.x.shape[1], hidden_dim=args.hidden_dim, num_layers=args.num_layers).to(device)
     model = train(model, graph, args.epochs, args.lr, *loss[args.loss])
     model.eval()
 
     torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
-    generate_visualization(model, graph, f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')
+    generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')
