@@ -33,16 +33,20 @@ from IPython.display import display
 
 
 class EmbeddingsScatterAnimation:
-    def __init__(self, H: np.array, C=None, figsize=None, xlim=None, ylim=None, interval=50, titleFormat=None):
+    def __init__(self, H: np.array, C=None, figsize=None, interval=50, titleFormat=None, **plot_args):
         """H - iterable of embeddings (n x 2) => np.array of shape (embeddings_no, samples_no, 2)
         """
         self.figsize = figsize
-        self.xlim = xlim
-        self.ylim = ylim
+        xlim = H[:, :, 0].min(), H[:, :, 0].max()
+        ylim = H[:, :, 1].min(), H[:, :, 1].max()
+
+        self.xlim = None
+        self.ylim = None
 
         self.H = H
         self.C = C
         self.titleFormat = titleFormat
+        self.plot_args = plot_args
 
         self.intervalSlider = widgets.IntSlider(
             value=100,
@@ -79,7 +83,7 @@ class EmbeddingsScatterAnimation:
             self.ax.set_xlim(*self.xlim)
         if self.ylim is not None:
             self.ax.set_ylim(*self.ylim)
-        self.plot = sns.scatterplot(x=self.H[i, :, 0], y=self.H[i, :, 1], hue=C, ax=self.ax)
+        self.plot = sns.scatterplot(x=self.H[i, :, 0], y=self.H[i, :, 1], hue=C, ax=self.ax, **self.plot_args)
         # ftm = self.titleFormat if self.titleFormat is not None else ""
         self.plot.set(title=f"iter {i}")
 
