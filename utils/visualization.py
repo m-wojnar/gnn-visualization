@@ -23,4 +23,4 @@ def plot(X: np.ndarray, y: np.ndarray, title: str = None, path: str = None) -> N
 
 def generate_plot(model: nn.Module, graph: Data, title: str = None, path: str = None) -> None:
     out = model(graph.x, graph.edge_index, graph.edge_attr).detach().cpu().numpy()
-    plot(out, graph.y, title, path)
+    plot(out, graph.y.detach().cpu().numpy(), title, path)

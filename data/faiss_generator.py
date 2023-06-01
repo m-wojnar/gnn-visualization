@@ -89,7 +89,7 @@ class FaissGenerator:
     def train(self) -> None:
         self.X, self.y = fetch_openml(data_id=self.dataset_id, cache=True, return_X_y=True, as_frame=False, parser='auto')
 
-        self.X = self.X.astype(np.float32)
+        self.X = self.X.astype(np.float32, order='C')
         self.y = LabelEncoder().fit_transform(self.y)
         n, m = self.X.shape
 
@@ -171,19 +171,19 @@ class FaissGenerator:
     @staticmethod
     def load_dataset(path: str, dev: device, batch_size: int = 8, shuffle: bool = True) -> Tuple[Data, DataLoader]:
         graphs = FaissGenerator.load_torch(path, dev)
-        graphs = list(map(lambda x: FaissGenerator.create_graph(*x), graphs))
+        graphs = list(map(lambda x: FaissGenerator.create_graph(*x, dev), graphs))
         subgraphs, graph = graphs[:-1], graphs[-1]
 
         return graph, DataLoader(subgraphs, batch_size=batch_size, shuffle=shuffle)
 
     @staticmethod
-    def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int) -> Data:
-        row = torch.arange(indexes.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1)
+    def create_graph(X: Tensor, y: Tensor, distances: Tensor, indexes: Tensor, n_neighbours: int, dev: device) -> Data:
+        row = torch.arange(indexes.shape[0]).view(-1, 1).repeat(1, n_neighbours).view(-1).to(dev)
         col = indexes.contiguous().view(-1)
         edge_index = torch.stack([row, col], dim=0)
         edge_attr = distances.contiguous().view(-1, 1)
 
-        perm = torch.randperm(edge_index.shape[1])
+        perm = torch.randperm(edge_index.shape[1]).to(dev)
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
 
         return Data(x=X, y=y, edge_index=edge_index, edge_attr=edge_attr)
