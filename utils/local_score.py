@@ -282,10 +282,12 @@ class LocalMetric:
             labels_test,
         ) = train_test_split(X_hds, X_lds, labels, test_size=dataset_size)
 
+        print(method_name)
+
         print("Calculating d_hd")
         d_hd = squareform(X=pdist(X=X_hds_test, metric="euclidean"), force="tomatrix")
 
-        print(method_name)
+        print("Calculating d_ld")
         d_ld = squareform(X=pdist(X=X_lds_test, metric="euclidean"), force="tomatrix")
         rnxk, auc_rnx = eval_dr_quality(d_hd=d_hd, d_ld=d_ld)
         kg, auc_kg = knngain(d_hd=d_hd, d_ld=d_ld, labels=labels_test)

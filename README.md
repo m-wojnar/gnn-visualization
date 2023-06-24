@@ -20,26 +20,45 @@ pip install -r requirements.txt
 
 ### Faiss index creation
 
-By default, the `FaissGenerator` class uses the `openml` package to download the datasets. You can specify the dataset
+By default, the `FaissGenerator` class uses the `OpenML` platform to download the datasets. You can specify the dataset
 you want to use by passing its id to the `FaissGenerator` constructor. The `FaissGenerator` class also takes the
-`nn` parameter, which specifies the number nearest neighbors, and `cosine_metric`, which specifies the metric used to
-compute the nearest neighbors.
+`nn` and `rn` parameters, which specifies the number nearest and random neighbors. The `metric` parameter specifies 
+the metric used to compute the nearest neighbors. `examples` sets the number of nodes to take from the graph for 
+each of `n_graphs` graphs.
 
 ```python
-from gnn_visualization import FaissGenerator
+from gnn_visualization.data import FaissGenerator
 
-generator = FaissGenerator('mnist_784', nn=100, cosine_metric=True)
-X, y, distances, indexes, nn = generator.run()
+generator = FaissGenerator(dataset_id=554, nn=2, rn=1, metric='binary', examples=100, n_graphs=10)
+generator.run()
 ```
 
-You can save the results with pickle and lz4 compression:
+### Saving and loading the results
+
+You can save the results with pickle and lz4 compression
 
 ```python
-generator.save('mnist_784_nn100_cosine.pkl.lz4')
+generator.save('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4')
 ```
 
-and load them later:
+and load them later to:
 
-```python
-X, y, distances, indexes, nn = FaissGenerator.load('mnist_784_nn100_cosine.pkl.lz4')
-```
+- numpy arrays
+
+    ```python
+    graphs = FaissGenerator.load('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4')
+    graph, subgraphs = graphs[:-1], graphs[-1]
+    ```
+
+- PyTorch tensors
+
+    ```python
+    graphs = FaissGenerator.load_torch('mnist_784/10g_100ex_binary_2nn_1rn.pkl.lz4', device)
+    graph, subgraphs = graphs[:-1], graphs[-1]
+    ```
+  
+- PyToch geometric dataset
+
+    ```python
+    graph, subgraphs = FaissGenerator.load_dataset('mnist_784/binary_full_nn2_rn1.pkl.lz4', device, batch_size=16, shuffle=True)
+    ```
