@@ -1,4 +1,4 @@
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from functools import reduce, partial
 from typing import Callable, Dict
 
@@ -41,29 +41,28 @@ class VisGNN(nn.Module):
         return x
 
 
-def mds_loss(out: Tensor, graph: Data) -> float:
-    d = F.pairwise_distance(out[graph.edge_index[0]], out[graph.edge_index[1]]).view(-1, 1)
-    return F.mse_loss(d, graph.edge_attr)
+def mds_loss(out: Tensor, graphs: Data) -> float:
+    d = F.pairwise_distance(out[graphs.edge_index[0]], out[graphs.edge_index[1]]).view(-1, 1)
+    return F.mse_loss(d, graphs.edge_attr)
 
 
-def ivhd_loss(out: Tensor, graph: Data, c: float) -> float:
-    d = F.pairwise_distance(out[graph.edge_index[0]], out[graph.edge_index[1]]).view(-1, 1)
-    return torch.where(graph.edge_attr == 0., d ** 2, c * (1 - d) ** 2).mean()
+def ivhd_loss(out: Tensor, graphs: Data, c: float) -> float:
+    d = F.pairwise_distance(out[graphs.edge_index[0]], out[graphs.edge_index[1]]).view(-1, 1)
+    return torch.where(graphs.edge_attr == 0., d ** 2, c * (1 - d) ** 2).mean()
 
 
 def train(
         model: nn.Module,
-        graph: Data,
         dataset: DataLoader,
-        epochs: int,
-        lr: float,
-        loss: Callable,
+        graph: Data,
+        args: Namespace,
+        loss_fn: Callable,
         loss_params: Dict
 ) -> nn.Module:
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = partial(loss, **loss_params)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    criterion = partial(loss_fn, **loss_params)
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(1, args.epochs + 1):
         loss_val = 0
         steps = 0
 
@@ -78,12 +77,12 @@ def train(
             loss_val += loss.item()
             steps += 1
 
-        print(f'loss = {loss_val / steps}')
-        torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_{epoch}.pt')
+        print(f'loss = {loss_val / steps}', flush=True)
 
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             model.eval()
-            generate_plot(model, graph, f'VisGNN {epoch}', f'{ROOT_PATH}/models/checkpoints/vis_gnn_{epoch}.pdf')
+            torch.save(model.state_dict(), f'{args.output_path}/model_{epoch}.pt')
+            generate_plot(model, graph, f'VisGNN {epoch}', f'{args.output_path}/vis_{epoch}.pdf')
             model.train()
 
     return model
@@ -92,11 +91,12 @@ def train(
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/100g_4000ex_binary_2nn_1rn.pkl.lz4')
+    args.add_argument('--output_path', type=str, default=f'{ROOT_PATH}/models/checkpoints')
     args.add_argument('--batch_size', type=int, default=8)
-    args.add_argument('--epochs', type=int, default=100)
-    args.add_argument('--hidden_dim', type=int, default=64)
+    args.add_argument('--epochs', type=int, default=50)
+    args.add_argument('--hidden_dim', type=int, default=32)
     args.add_argument('--num_layers', type=int, default=5)
-    args.add_argument('--lr', type=float, default=0.001)
+    args.add_argument('--lr', type=float, default=3e-4)
     args.add_argument('--loss', type=str, choices=['mds', 'ivhd'], default='ivhd')
     args = args.parse_args()
 
@@ -109,8 +109,8 @@ if __name__ == '__main__':
     graph, dataset = FaissGenerator.load_dataset(args.data, device, args.batch_size)
 
     model = VisGNN(graph.x.shape[1], args.hidden_dim, args.num_layers).to(device)
-    model = train(model, graph, dataset, args.epochs, args.lr, *loss[args.loss])
+    model = train(model, dataset, graph, args, *loss[args.loss])
     model.eval()
 
-    torch.save(model.state_dict(), f'{ROOT_PATH}/models/checkpoints/vis_gnn_model_final.pt')
-    generate_plot(model, graph, 'VisGNN', f'{ROOT_PATH}/models/checkpoints/vis_gnn_final.pdf')
+    torch.save(model.state_dict(), f'{args.output_path}/model_final.pt')
+    generate_plot(model, graph, 'VisGNN', f'{args.output_path}/vis_final.pdf')
