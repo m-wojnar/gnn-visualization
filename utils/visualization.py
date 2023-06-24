@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch_geometric.data import Data
 
 
-def plot(X: np.ndarray, y: np.ndarray, title: str = None, path: str = None) -> None:
+def plot(X: np.ndarray, y: np.ndarray, title: str = None, path: str = None, show: bool = True) -> None:
     plt.figure(figsize=(6, 6))
 
     for y_val in np.unique(y):
@@ -18,9 +18,10 @@ def plot(X: np.ndarray, y: np.ndarray, title: str = None, path: str = None) -> N
     if path is not None:
         plt.savefig(path, bbox_inches='tight')
 
-    plt.show()
+    if show:
+        plt.show()
 
 
-def generate_plot(model: nn.Module, graph: Data, title: str = None, path: str = None) -> None:
+def generate_plot(model: nn.Module, graph: Data, title: str = None, path: str = None, show: bool = True) -> None:
     out = model(graph.x, graph.edge_index, graph.edge_attr).detach().cpu().numpy()
-    plot(out, graph.y.detach().cpu().numpy(), title, path)
+    plot(out, graph.y.detach().cpu().numpy(), title, path, show)

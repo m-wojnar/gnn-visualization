@@ -82,7 +82,7 @@ def train(
         if epoch % 5 == 0:
             model.eval()
             torch.save(model.state_dict(), f'{args.output_path}/model_{epoch}.pt')
-            generate_plot(model, graph, f'VisGNN {epoch}', f'{args.output_path}/vis_{epoch}.pdf')
+            generate_plot(model, graph, f'VisGNN {epoch}', f'{args.output_path}/vis_{epoch}.pdf', args.show_plots)
             model.train()
 
     return model
@@ -92,6 +92,7 @@ if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--data', type=str, default=f'{ROOT_PATH}/data/mnist_784/100g_4000ex_binary_2nn_1rn.pkl.lz4')
     args.add_argument('--output_path', type=str, default=f'{ROOT_PATH}/models/checkpoints')
+    args.add_argument('--show_plots', action='store_true')
     args.add_argument('--batch_size', type=int, default=8)
     args.add_argument('--epochs', type=int, default=50)
     args.add_argument('--hidden_dim', type=int, default=32)
@@ -113,4 +114,4 @@ if __name__ == '__main__':
     model.eval()
 
     torch.save(model.state_dict(), f'{args.output_path}/model_final.pt')
-    generate_plot(model, graph, 'VisGNN', f'{args.output_path}/vis_final.pdf')
+    generate_plot(model, graph, 'VisGNN', f'{args.output_path}/vis_final.pdf', args.show_plots)
